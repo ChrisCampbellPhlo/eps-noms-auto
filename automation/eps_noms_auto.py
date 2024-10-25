@@ -1,3 +1,4 @@
+import sys
 import openpyxl
 import requests
 import csv
@@ -60,9 +61,9 @@ def modify_excel(filename):
     sheet = workbook.active
     
     # Add new column
-    sheet['A1'] = 'New Column'
+    sheet['Dispenser Nominatons'] = 'Week'
     for row in range(2, sheet.max_row + 1):
-        sheet[f'D{row}'] = f'Value {row}'
+        sheet[f'A{row}'] = f'Value {row}'
 
     # Rename pre-existing column
     old_column_name = 'Local Pharmaceutical Committee (LPC) – where blank awaiting update or DAC'
@@ -87,11 +88,10 @@ def modify_excel(filename):
 #        print(f"Error modifying Excel file: {e}")
 #        success = False
 #        result = None
-    
+#   
     if success:
         return result
-    else:
-        return None
+
 
 def save_excel(workbook, filename):
     """
@@ -188,15 +188,15 @@ def main():
                 if excel_to_csv(modified_workbook, local_csv_filename):
                     # Upload CSV file to GCP
                     if upload_to_gcp(gcp_bucket_name, local_csv_filename, gcp_csv_blob_name):
-                        print("Process completed successfully")
+                        print("Process successfully complete")
                     else:
-                        print("Failed to upload CSV to GCP. Exiting.")
+                        print("Failed to upload CSV to GCP. Exiting Process.")
                 else:
-                    print("Failed to convert xlsx to CSV. Exiting.")
+                    print("Failed to convert xlsx to CSV. Exiting Process.")
             else:
-                print("Failed to save modified Excel file. Exiting.")
+                print("Failed to save modified Excel file. Exiting Process.")
         else:
-            print("Failed to modify Excel file. Exiting.")
+            print("Failed to modify Excel file. Exiting Process.")
     else:
         print("Failed to download Excel file. Exiting.")
 
