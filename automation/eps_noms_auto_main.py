@@ -1,14 +1,17 @@
-import openpyxl
-import requests
+# Primary libraries
 import csv
-from google.cloud import storage
 import os
 from datetime import datetime, timedelta
-from bs4 import BeautifulSoup  # Changed from import BeautifulSoup to correct import
+
+# 3rd party libraries
+import openpyxl
+import requests
+from bs4 import BeautifulSoup
+from google.cloud import storage
 
 def authentication():
     """
-    Set up Google Cloud authentication using service account key.
+    Set up Google Cloud auth using service account key.
     """
     try:
         service_account_path = '/mnt/c/Users/ChristopherCampbell/OneDrive - Phlo/keys/phlo-sandpit-analytics-service-account.json'
@@ -18,7 +21,7 @@ def authentication():
             
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = service_account_path
         
-        # Test the authentication
+        # Testing auth
         storage_client = storage.Client()
         print("Authentication successful with project:", storage_client.project)
         return True
@@ -68,7 +71,7 @@ def get_latest_processed_date(bucket_name, prefix=None):
     """
     try:
         files = list_bucket_files(bucket_name, prefix)
-        # Changed to look for + instead of -
+        # Changed to look for "+" instead of "-"
         processed_files = [f for f in files if 'processed_eps_nom_report+' in f]
         
         if not processed_files:
@@ -78,7 +81,7 @@ def get_latest_processed_date(bucket_name, prefix=None):
         dates = []
         for filename in processed_files:
             try:
-                # Split on + instead of -
+                # Split on "+ instead of "-"
                 date_str = filename.split('+')[1][:6]  # Extract YYMMDD
                 date = datetime.strptime(date_str, '%y%m%d')
                 dates.append(date)
@@ -94,7 +97,6 @@ def get_latest_processed_date(bucket_name, prefix=None):
         print(f"Error getting latest processed date: {e}")
         return None
 
-
 def get_latest_report_date():
     """
     Calculate the date based on the release schedule:
@@ -104,12 +106,12 @@ def get_latest_report_date():
     current_date = datetime.now()
     current_weekday = current_date.weekday()  # Monday is 0, Friday is 4
 
-    # Calculate the most recent Monday (release date)
+    # Calc most recent Monday (release date)
     days_since_monday = current_weekday
     latest_monday = current_date - timedelta(days=days_since_monday)
 
-    # Calculate the previous Friday (filename date)
-    previous_friday = latest_monday - timedelta(days=3)  # Go back 3 days from Monday to get Friday
+    # Calc previous Friday (filename date)
+    previous_friday = latest_monday - timedelta(days=3)  # Go back 3 days from Monday to get Friday Date
 
     print(f"Current date: {current_date.strftime('%Y-%m-%d')}")
     print(f"Release date (Monday): {latest_monday.strftime('%Y-%m-%d')}")
@@ -120,7 +122,8 @@ def get_latest_report_date():
 def generate_filename(base_name, date):
     """
     Generate filename with date format.
-    Note: NHS website uses hyphen instead of plus
+    Note: NHS website using "-" not "+"?
+    Format should be "eps_noms_report+{FridayDate}"
     """
     date_str = date.strftime("%y%m%d")
     return f"{base_name.replace('+', '-')}{date_str}.xlsx"
@@ -170,8 +173,9 @@ def modify_excel(filename):
     """
     Modify Excel file with required changes:
     - Select 'Dispenser Nominations' sheet
-    - Add 'Week' column with appropriate date
-    - Save only this sheet
+    - Adds in 'Week' column with appropriate date to file name/friday date
+    - Rename LPC column title (I1) AFTER adding Week Column (A1)
+    - Save only this sheet, not title sheet
     """
     try:
         workbook = openpyxl.load_workbook(filename)
@@ -209,6 +213,11 @@ def modify_excel(filename):
             sheet[f'A{row}'] = formatted_date
         
         print(f"Added date {formatted_date} to rows 2 through {last_row}")
+
+        # Rename LPC column (I1) after inserting new column
+        old_title = sheet['I1'].value
+        sheet['I1'] = 'Local Pharmaceutical Committee (LPC)'
+        print(f"Renamed column I1 from '{old_title}' to 'Local Pharmaceutical Committee (LPC)'")
         
         return workbook
     except Exception as e:
@@ -342,6 +351,32 @@ def main():
     if check_file_exists(gcp_bucket_name, gcp_csv_blob_name):
         print(f"File {gcp_csv_blob_name} already exists in GCP. Skipping processing.")
         return
+
+    # Download and process the file
+    if download_excel(excel_url, local_excel_filename):
+        modified_workbook = modify_excel(local_excel_filename)
+        if modified_workbook is not None:
+            if save_excel(modified_workbook, modified_excel_filename):
+                if excel_to_csv(modified_workbook, local_csv_filename):
+                    if upload_to_gcp(gcp_bucket_name, local_csv_filename, gcp_csv_blob_name):
+                        print("Process successfully complete")
+                    else:
+                        print("Failed to upload CSV to GCP. Exiting Process.")
+                else:
+                    print("Failed to convert xlsx to CSV. Exiting Process.")
+            else:
+                print("Failed to save modified Excel file. Exiting Process.")
+        else:
+            print("Failed to modify Excel file. Exiting Process.")
+    else:
+        print("Failed to download Excel file. Exiting.")
+
+    # Clean up
+    cleanup_files([
+        local_excel_filename,
+        modified_excel_filename,
+        local_csv_filename
+    ])
 
 if __name__ == "__main__":
     main()
