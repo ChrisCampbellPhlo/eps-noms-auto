@@ -71,8 +71,8 @@ def get_latest_processed_date(bucket_name, prefix=None):
     """
     try:
         files = list_bucket_files(bucket_name, prefix)
-        # Changed to look for "+" instead of "-"
-        processed_files = [f for f in files if 'processed_eps_nom_report+' in f]
+        # Changed to look for the new filename format
+        processed_files = [f for f in files if 'eps_nom_report+' in f]
         
         if not processed_files:
             print("No processed files found in bucket")
@@ -81,7 +81,7 @@ def get_latest_processed_date(bucket_name, prefix=None):
         dates = []
         for filename in processed_files:
             try:
-                # Split on "+ instead of "-"
+                # Split on + instead of -
                 date_str = filename.split('+')[1][:6]  # Extract YYMMDD
                 date = datetime.strptime(date_str, '%y%m%d')
                 dates.append(date)
@@ -173,9 +173,9 @@ def modify_excel(filename):
     """
     Modify Excel file with required changes:
     - Select 'Dispenser Nominations' sheet
-    - Adds in 'Week' column with appropriate date to file name/friday date
-    - Rename LPC column title (I1) AFTER adding Week Column (A1)
-    - Save only this sheet, not title sheet
+    - Add 'Week' column with appropriate date
+    - Rename LPC column title (I1)
+    - Save only this sheet
     """
     try:
         workbook = openpyxl.load_workbook(filename)
@@ -193,6 +193,16 @@ def modify_excel(filename):
         sheet = workbook['Dispenser Nominations']
         print(f"\nWorking with sheet: {sheet.title}")
         
+        # Find last populated row in column B
+        last_populated_row = 1  # Start at 1 to account for header
+        for row in range(2, sheet.max_row + 1):
+            if sheet[f'B{row}'].value is not None:
+                last_populated_row = row
+            else:
+                break  # Exit loop when we find first empty cell
+        
+        print(f"Found last populated row in column B: {last_populated_row}")
+        
         # Extract date from filename
         date_str = filename.split('-')[-1].replace('.xlsx', '')  # Get YYMMDD part
         file_date = datetime.strptime(date_str, '%y%m%d')
@@ -204,15 +214,12 @@ def modify_excel(filename):
         sheet['A1'] = 'Week'
         print("Added 'Week' column")
         
-        # Fill date down column A
-        last_row = sheet.max_row
-        print(f"Filling dates down to row {last_row}")
-        
-        # Fill all cells from A2 down with the date
-        for row in range(2, last_row + 1):
+        # Fill date down column A to match populated rows
+        print(f"Filling dates down to row {last_populated_row}")
+        for row in range(2, last_populated_row + 1):
             sheet[f'A{row}'] = formatted_date
         
-        print(f"Added date {formatted_date} to rows 2 through {last_row}")
+        print(f"Added date {formatted_date} to rows 2 through {last_populated_row}")
 
         # Rename LPC column (I1) after inserting new column
         old_title = sheet['I1'].value
@@ -288,6 +295,7 @@ def setup_working_directory():
     print(f"\nWorking directory: {os.getcwd()}")
     return work_dir
 
+    
 def cleanup_files(files_to_remove):
     """
     Safely remove local files if they exist.
@@ -307,9 +315,13 @@ def main():
     Main function with GCP bucket checking.
     """
     # Set up working directory first
+    # work_dir = setup_working_directory()
+    # print(f"Files will be processed in: {work_dir}")
+    
+    # Set up working directory first
     work_dir = setup_working_directory()
     print(f"Files will be processed in: {work_dir}")
-    
+
     # Set up auth
     if not authentication():
         print("Authentication failed. Exiting.")
@@ -345,7 +357,8 @@ def main():
     local_excel_filename = source_filename
     modified_excel_filename = f"modified_{source_filename}"
     local_csv_filename = gcp_filename.replace('.xlsx', '.csv')  # Use + version for CSV
-    gcp_csv_blob_name = f"{blob_prefix}processed_{gcp_filename[:-5]}.csv"  # Use + version for GCP
+     # Remove 'processed_' prefix from GCP blob name
+    gcp_csv_blob_name = f"{blob_prefix}{gcp_filename[:-5]}.csv"  # Use + version for GCP
 
     # Check if file exists
     if check_file_exists(gcp_bucket_name, gcp_csv_blob_name):
@@ -371,12 +384,13 @@ def main():
     else:
         print("Failed to download Excel file. Exiting.")
 
+    """
     # Clean up
     cleanup_files([
         local_excel_filename,
         modified_excel_filename,
         local_csv_filename
     ])
-
+    """
 if __name__ == "__main__":
     main()
